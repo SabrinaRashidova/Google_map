@@ -132,7 +132,6 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     Toast.makeText(this@MainActivity, "Geocoding failed: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
             }
-        }
     }
 
     private fun checkLocationPermissionAndEnable(){
