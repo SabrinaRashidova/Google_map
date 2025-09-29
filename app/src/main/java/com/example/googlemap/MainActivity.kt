@@ -1,20 +1,235 @@
 package com.example.googlemap
 
+import android.Manifest
+import android.annotation.SuppressLint
+import android.content.Intent
+import android.graphics.Color
+import android.location.Geocoder
+import android.location.Location
 import android.os.Bundle
-import androidx.activity.enableEdgeToEdge
+import android.os.Looper
+import android.provider.Settings
+import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
+import androidx.core.content.ContextCompat
+import androidx.core.content.getSystemService
+import com.example.googlemap.databinding.ActivityMainBinding
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.GoogleMap
+import com.google.android.gms.maps.OnMapReadyCallback
+import com.google.android.gms.maps.SupportMapFragment
+import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.Marker
+import com.google.android.gms.maps.model.MarkerOptions
+import com.google.android.gms.maps.model.PolylineOptions
+import com.google.maps.android.PolyUtil
+import org.json.JSONObject
+import java.net.URL
+import javax.net.ssl.HttpsURLConnection
 
-class MainActivity : AppCompatActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
-        setContentView(R.layout.activity_main)
-        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
-            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
-            insets
+class MainActivity : AppCompatActivity(), OnMapReadyCallback {
+
+    private lateinit var binding: ActivityMainBinding
+
+    private lateinit var mMap: GoogleMap
+    private lateinit var fusedClient: FusedLocationProviderClient
+
+    private var userMarker: Marker? = null
+    private var cameraMovedOnce: Boolean = false
+
+    private val locationCallback = object : LocationCallback(){
+        override fun onLocationResult(result: LocationResult) {
+            val loc = result.lastLocation ?: return
+            updateMapLocation(loc)
         }
     }
+
+    private val requestPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()){granted->
+            if (granted){
+                enableMyLocation()
+            }else{
+                Toast.makeText(this, "Location permission denied", Toast.LENGTH_LONG).show()
+            }
+        }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        val mapFragment = supportFragmentManager
+            .findFragmentById(R.id.map) as SupportMapFragment
+        mapFragment.getMapAsync(this)
+
+        fusedClient = LocationServices.getFusedLocationProviderClient(this)
+
+        binding.btnRoute.setOnClickListener {
+            val start = binding.etStart.text.toString()
+            val destination = binding.etDestination.text.toString()
+
+            if (start.isNotEmpty() && destination.isNotEmpty()) {
+                val geocoder = Geocoder(this)
+                val startList = geocoder.getFromLocationName(start, 5)!!
+                val destList = geocoder.getFromLocationName(destination, 5)!!
+
+                if (startList.isNotEmpty() && destList.isNotEmpty()) {
+                    val startLatLng = LatLng(startList[0].latitude, startList[0].longitude)
+                    val destLatLng = LatLng(destList[0].latitude, destList[0].longitude)
+
+                    mMap.addMarker(MarkerOptions().position(startLatLng).title("Start"))
+                    mMap.addMarker(MarkerOptions().position(destLatLng).title("Destination"))
+                    mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(startLatLng, 8f))
+
+                    drawRoute(startLatLng, destLatLng)
+                }
+            }
+        }
+
+    }
+
+    override fun onMapReady(googleMap: GoogleMap) {
+        mMap = googleMap
+//        val tashkent = LatLng(41.2995, 69.2401)
+//        mMap.addMarker(MarkerOptions().position(tashkent).title("Marker in Tashkent"))
+//        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(tashkent,12f))
+
+        checkLocationPermissionAndEnable()
+    }
+
+    private fun checkLocationPermissionAndEnable(){
+        val fine = Manifest.permission.ACCESS_FINE_LOCATION
+        when{
+            ContextCompat.checkSelfPermission(this,fine) == android.content.pm.PackageManager.PERMISSION_GRANTED->{
+                checkIfLocationEnabled()
+            }
+            shouldShowRequestPermissionRationale(fine) ->{
+                AlertDialog.Builder(this)
+                    .setTitle("Location permission needed")
+                    .setMessage("This app needs location to show your position on the map.")
+                    .setPositiveButton("OK"){
+                            _,_ -> requestPermissionLauncher.launch(fine)
+                    }
+                    .setNegativeButton("Cancel",null)
+                    .show()
+            }
+            else -> {
+                requestPermissionLauncher.launch(fine)
+            }
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun enableMyLocation(){
+        try {
+            mMap.isMyLocationEnabled = true
+            mMap.uiSettings.isMyLocationButtonEnabled = true
+
+            fusedClient.lastLocation.addOnSuccessListener { location ->
+                location?.let { updateMapLocation(it) }
+                startLocationUpdates()
+            }
+        }catch(e: SecurityException){
+            e.printStackTrace()
+        }
+    }
+
+    private fun updateMapLocation(location: Location) {
+        val latLng = LatLng(location.latitude, location.longitude)
+
+        if (userMarker == null) {
+            userMarker = mMap.addMarker(MarkerOptions().position(latLng).title("You"))
+        } else {
+            userMarker?.position = latLng
+        }
+        if (!cameraMovedOnce) {
+            mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(latLng, 4f))
+            cameraMovedOnce = true
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun startLocationUpdates(){
+        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY,5_000L)
+            .setMinUpdateIntervalMillis(2_000L)
+            .build()
+
+        fusedClient.requestLocationUpdates(request,locationCallback, Looper.getMainLooper())
+    }
+
+    private fun stopLocationUpdates() {
+        fusedClient.removeLocationUpdates(locationCallback)
+    }
+
+    private fun checkIfLocationEnabled() {
+        val lm = getSystemService(LOCATION_SERVICE) as android.location.LocationManager
+        val gpsEnabled = lm.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)
+        val networkEnabled = lm.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER)
+
+        if (!gpsEnabled && !networkEnabled) {
+            AlertDialog.Builder(this)
+                .setTitle("Enable Location Services")
+                .setMessage("Your location services are turned off. Please enable them in settings.")
+                .setPositiveButton("Settings") { _, _ ->
+                    startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+        }else {
+            enableMyLocation()
+        }
+    }
+
+    private fun drawRoute(start: LatLng, dest: LatLng){
+        val url = "https://maps.googleapis.com/maps/api/directions/json?" +
+                "origin=${start.latitude},${start.longitude}" +
+                "&destination=${dest.latitude},${dest.longitude}" +
+                "&key=AIzaSyDxLe_9A-NZh9IlHF_O1rufAajVduodeTo"
+
+        Thread{
+            val connection = URL(url).openConnection() as HttpsURLConnection
+            val inputStream = connection.inputStream
+            val response = inputStream.bufferedReader().use { it.readText() }
+
+            val json = JSONObject(response)
+            val routes = json.getJSONArray("routes")
+            if (routes.length() >0){
+                val overviewPolyline = routes.getJSONObject(0)
+                    .getJSONObject("overview_polyline")
+                    .getString("points")
+
+                val points = PolyUtil.decode(overviewPolyline)
+                runOnUiThread {
+                    mMap.addPolyline(
+                        PolylineOptions()
+                        .addAll(points)
+                        .width(10f)
+                        .color(Color.BLUE))
+                }
+            }
+        }.start()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::mMap.isInitialized) {
+            checkLocationPermissionAndEnable()
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        stopLocationUpdates()
+    }
+
+
+
 }
