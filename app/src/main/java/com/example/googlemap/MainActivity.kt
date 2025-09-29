@@ -13,8 +13,9 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat.shouldShowRequestPermissionRationale
 import androidx.core.content.ContextCompat
-import androidx.core.content.getSystemService
+import androidx.lifecycle.lifecycleScope
 import com.example.googlemap.databinding.ActivityMainBinding
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
@@ -31,8 +32,13 @@ import com.google.android.gms.maps.model.Marker
 import com.google.android.gms.maps.model.MarkerOptions
 import com.google.android.gms.maps.model.PolylineOptions
 import com.google.maps.android.PolyUtil
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.io.IOException
 import java.net.URL
+import java.util.Locale
 import javax.net.ssl.HttpsURLConnection
 
 class MainActivity : AppCompatActivity(), OnMapReadyCallback {
@@ -77,24 +83,13 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             val destination = binding.etDestination.text.toString()
 
             if (start.isNotEmpty() && destination.isNotEmpty()) {
-                val geocoder = Geocoder(this)
-                val startList = geocoder.getFromLocationName(start, 5)!!
-                val destList = geocoder.getFromLocationName(destination, 5)!!
-
-                if (startList.isNotEmpty() && destList.isNotEmpty()) {
-                    val startLatLng = LatLng(startList[0].latitude, startList[0].longitude)
-                    val destLatLng = LatLng(destList[0].latitude, destList[0].longitude)
-
-                    mMap.addMarker(MarkerOptions().position(startLatLng).title("Start"))
-                    mMap.addMarker(MarkerOptions().position(destLatLng).title("Destination"))
-                    mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(startLatLng, 8f))
-
-                    drawRoute(startLatLng, destLatLng)
-                }
+                geocodeAndShow(start,destination)
             }
         }
 
     }
+
+
 
     override fun onMapReady(googleMap: GoogleMap) {
         mMap = googleMap
@@ -103,6 +98,41 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 //        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(tashkent,12f))
 
         checkLocationPermissionAndEnable()
+    }
+
+    private fun geocodeAndShow(start: String, destination: String){
+        if (start.isBlank() || destination.isBlank()){
+            Toast.makeText(this, "Please enter start and destination", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+            val geocoder = Geocoder(this, Locale.getDefault())
+            lifecycleScope.launch {
+                try {
+                    val startList = geocoder.getFromLocationName(start,1)
+                    val destList = geocoder.getFromLocationName(destination,1)
+
+                    if (startList != null && destList != null){
+                        val startLatLng = LatLng(startList[0].latitude,startList[0].longitude)
+                        val destLatLng = LatLng(destList[0].latitude,destList[0].longitude)
+
+                        withContext(Dispatchers.Main){
+                            mMap.addMarker(MarkerOptions().position(startLatLng).title("Start"))
+                            mMap.addMarker(MarkerOptions().position(destLatLng).title("Destination"))
+                            mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(startLatLng, 12f))
+                            drawRoute(startLatLng, destLatLng)
+                        }
+                    }else {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(this@MainActivity, "Address not found", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+
+                }catch (e: IOException){
+                    Toast.makeText(this@MainActivity, "Geocoding failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
     }
 
     private fun checkLocationPermissionAndEnable(){
@@ -192,7 +222,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         val url = "https://maps.googleapis.com/maps/api/directions/json?" +
                 "origin=${start.latitude},${start.longitude}" +
                 "&destination=${dest.latitude},${dest.longitude}" +
-                "&key=AIzaSyDxLe_9A-NZh9IlHF_O1rufAajVduodeTo"
+                "&key=${getString(R.string.maps_api_key)}"
 
         Thread{
             val connection = URL(url).openConnection() as HttpsURLConnection
