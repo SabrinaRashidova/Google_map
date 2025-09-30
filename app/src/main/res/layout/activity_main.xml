@@ -12,13 +12,13 @@
         android:orientation="vertical"
         android:padding="8dp">
 
-        <EditText
+        <AutoCompleteTextView
             android:id="@+id/etStart"
             android:hint="Enter starting point"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"/>
 
-        <EditText
+        <AutoCompleteTextView
             android:id="@+id/etDestination"
             android:hint="Enter destination"
             android:layout_width="match_parent"
