@@ -13,7 +13,6 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.app.ActivityCompat.shouldShowRequestPermissionRationale
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.example.googlemap.databinding.ActivityMainBinding
@@ -109,31 +108,36 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             val geocoder = Geocoder(this, Locale.getDefault())
             lifecycleScope.launch {
                 try {
-                    val startList = geocoder.getFromLocationName(start,1)
-                    val destList = geocoder.getFromLocationName(destination,1)
+                    val startList = withContext(Dispatchers.IO) {
+                        geocoder.getFromLocationName(start, 1)
+                    }
+                    val destList = withContext(Dispatchers.IO) {
+                        geocoder.getFromLocationName(destination, 1)
+                    }
 
-                    if (startList != null && destList != null){
-                        val startLatLng = LatLng(startList[0].latitude,startList[0].longitude)
-                        val destLatLng = LatLng(destList[0].latitude,destList[0].longitude)
+                    if (startList != null && destList != null && startList.isNotEmpty() && destList.isNotEmpty()) {
+                        val startLatLng = LatLng(startList[0].latitude, startList[0].longitude)
+                        val destLatLng = LatLng(destList[0].latitude, destList[0].longitude)
 
-                        withContext(Dispatchers.Main){
+                        withContext(Dispatchers.Main) {
                             mMap.addMarker(MarkerOptions().position(startLatLng).title("Start"))
                             mMap.addMarker(MarkerOptions().position(destLatLng).title("Destination"))
                             mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(startLatLng, 12f))
                             drawRoute(startLatLng, destLatLng)
                         }
-                    }else {
+                    } else {
                         withContext(Dispatchers.Main) {
                             Toast.makeText(this@MainActivity, "Address not found", Toast.LENGTH_SHORT).show()
                         }
                     }
-
-                }catch (e: IOException){
-                    Toast.makeText(this@MainActivity, "Geocoding failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                } catch (e: IOException) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@MainActivity, "Geocoding failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
         }
-    }
+
 
     private fun checkLocationPermissionAndEnable(){
         val fine = Manifest.permission.ACCESS_FINE_LOCATION
