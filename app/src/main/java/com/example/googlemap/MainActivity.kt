@@ -9,15 +9,11 @@ import android.location.Location
 import android.os.Bundle
 import android.os.Looper
 import android.provider.Settings
-import android.text.Editable
-import android.text.TextWatcher
-import android.widget.ArrayAdapter
-import android.widget.AutoCompleteTextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.activity.result.registerForActivityResult
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat.shouldShowRequestPermissionRationale
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.example.googlemap.databinding.ActivityMainBinding
@@ -35,9 +31,6 @@ import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.Marker
 import com.google.android.gms.maps.model.MarkerOptions
 import com.google.android.gms.maps.model.PolylineOptions
-import com.google.android.libraries.places.api.Places
-import com.google.android.libraries.places.api.net.FindAutocompletePredictionsRequest
-import com.google.android.libraries.places.api.net.PlacesClient
 import com.google.maps.android.PolyUtil
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -51,17 +44,25 @@ import javax.net.ssl.HttpsURLConnection
 class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     private lateinit var binding: ActivityMainBinding
+
     private lateinit var mMap: GoogleMap
     private lateinit var fusedClient: FusedLocationProviderClient
-    private lateinit var locationHelper: LocationHelper
-    private lateinit var autoCompleteHelper: AutoCompleteHelper
-    private lateinit var mapHelper: MapHelper
+
+    private var userMarker: Marker? = null
+    private var cameraMovedOnce: Boolean = false
+
+    private val locationCallback = object : LocationCallback(){
+        override fun onLocationResult(result: LocationResult) {
+            val loc = result.lastLocation ?: return
+            updateMapLocation(loc)
+        }
+    }
 
     private val requestPermissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()){granted ->
+        registerForActivityResult(ActivityResultContracts.RequestPermission()){granted->
             if (granted){
-                locationHelper.enableMyLocation()
-            }else {
+                enableMyLocation()
+            }else{
                 Toast.makeText(this, "Location permission denied", Toast.LENGTH_LONG).show()
             }
         }
@@ -77,15 +78,10 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
         fusedClient = LocationServices.getFusedLocationProviderClient(this)
 
-        Places.initialize(applicationContext,getString(R.string.maps_api_key))
-        autoCompleteHelper = AutoCompleteHelper(com.google.android.libraries.places.api.Places.createClient(this))
-        autoCompleteHelper.setupAutoComplete(binding.etStart)
-        autoCompleteHelper.setupAutoComplete(binding.etDestination)
-
-
         binding.btnRoute.setOnClickListener {
             val start = binding.etStart.text.toString()
             val destination = binding.etDestination.text.toString()
+
             if (start.isNotEmpty() && destination.isNotEmpty()) {
                 geocodeAndShow(start,destination)
             }
@@ -93,13 +89,16 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     }
 
+
+
     override fun onMapReady(googleMap: GoogleMap) {
         mMap = googleMap
-        locationHelper = LocationHelper(this, mMap, fusedClient)
-        locationHelper.checkLocationPermissionAndEnable { requestPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION) }
-        mapHelper = MapHelper(mMap,this)
-    }
+//        val tashkent = LatLng(41.2995, 69.2401)
+//        mMap.addMarker(MarkerOptions().position(tashkent).title("Marker in Tashkent"))
+//        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(tashkent,12f))
 
+        checkLocationPermissionAndEnable()
+    }
 
     private fun geocodeAndShow(start: String, destination: String){
         if (start.isBlank() || destination.isBlank()){
@@ -110,47 +109,156 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             val geocoder = Geocoder(this, Locale.getDefault())
             lifecycleScope.launch {
                 try {
-                    val startList = withContext(Dispatchers.IO) {
-                        geocoder.getFromLocationName(start, 1)
-                    }
-                    val destList = withContext(Dispatchers.IO) {
-                        geocoder.getFromLocationName(destination, 1)
-                    }
+                    val startList = geocoder.getFromLocationName(start,1)
+                    val destList = geocoder.getFromLocationName(destination,1)
 
-                    if (startList != null && destList != null && startList.isNotEmpty() && destList.isNotEmpty()) {
-                        val startLatLng = LatLng(startList[0].latitude, startList[0].longitude)
-                        val destLatLng = LatLng(destList[0].latitude, destList[0].longitude)
+                    if (startList != null && destList != null){
+                        val startLatLng = LatLng(startList[0].latitude,startList[0].longitude)
+                        val destLatLng = LatLng(destList[0].latitude,destList[0].longitude)
 
-                        withContext(Dispatchers.Main) {
+                        withContext(Dispatchers.Main){
                             mMap.addMarker(MarkerOptions().position(startLatLng).title("Start"))
                             mMap.addMarker(MarkerOptions().position(destLatLng).title("Destination"))
                             mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(startLatLng, 12f))
-                            mapHelper.drawRoute(startLatLng, destLatLng)
+                            drawRoute(startLatLng, destLatLng)
                         }
-                    } else {
+                    }else {
                         withContext(Dispatchers.Main) {
                             Toast.makeText(this@MainActivity, "Address not found", Toast.LENGTH_SHORT).show()
                         }
                     }
-                } catch (e: IOException) {
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(this@MainActivity, "Geocoding failed: ${e.message}", Toast.LENGTH_SHORT).show()
-                    }
+
+                }catch (e: IOException){
+                    Toast.makeText(this@MainActivity, "Geocoding failed: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
             }
+    }
+
+    private fun checkLocationPermissionAndEnable(){
+        val fine = Manifest.permission.ACCESS_FINE_LOCATION
+        when{
+            ContextCompat.checkSelfPermission(this,fine) == android.content.pm.PackageManager.PERMISSION_GRANTED->{
+                checkIfLocationEnabled()
+            }
+            shouldShowRequestPermissionRationale(fine) ->{
+                AlertDialog.Builder(this)
+                    .setTitle("Location permission needed")
+                    .setMessage("This app needs location to show your position on the map.")
+                    .setPositiveButton("OK"){
+                            _,_ -> requestPermissionLauncher.launch(fine)
+                    }
+                    .setNegativeButton("Cancel",null)
+                    .show()
+            }
+            else -> {
+                requestPermissionLauncher.launch(fine)
+            }
         }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun enableMyLocation(){
+        try {
+            mMap.isMyLocationEnabled = true
+            mMap.uiSettings.isMyLocationButtonEnabled = true
+
+            fusedClient.lastLocation.addOnSuccessListener { location ->
+                location?.let { updateMapLocation(it) }
+                startLocationUpdates()
+            }
+        }catch(e: SecurityException){
+            e.printStackTrace()
+        }
+    }
+
+    private fun updateMapLocation(location: Location) {
+        val latLng = LatLng(location.latitude, location.longitude)
+
+        if (userMarker == null) {
+            userMarker = mMap.addMarker(MarkerOptions().position(latLng).title("You"))
+        } else {
+            userMarker?.position = latLng
+        }
+        if (!cameraMovedOnce) {
+            mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(latLng, 4f))
+            cameraMovedOnce = true
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun startLocationUpdates(){
+        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY,5_000L)
+            .setMinUpdateIntervalMillis(2_000L)
+            .build()
+
+        fusedClient.requestLocationUpdates(request,locationCallback, Looper.getMainLooper())
+    }
+
+    private fun stopLocationUpdates() {
+        fusedClient.removeLocationUpdates(locationCallback)
+    }
+
+    private fun checkIfLocationEnabled() {
+        val lm = getSystemService(LOCATION_SERVICE) as android.location.LocationManager
+        val gpsEnabled = lm.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)
+        val networkEnabled = lm.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER)
+
+        if (!gpsEnabled && !networkEnabled) {
+            AlertDialog.Builder(this)
+                .setTitle("Enable Location Services")
+                .setMessage("Your location services are turned off. Please enable them in settings.")
+                .setPositiveButton("Settings") { _, _ ->
+                    startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+        }else {
+            enableMyLocation()
+        }
+    }
+
+    private fun drawRoute(start: LatLng, dest: LatLng){
+        val url = "https://maps.googleapis.com/maps/api/directions/json?" +
+                "origin=${start.latitude},${start.longitude}" +
+                "&destination=${dest.latitude},${dest.longitude}" +
+                "&key=${getString(R.string.maps_api_key)}"
+
+        Thread{
+            val connection = URL(url).openConnection() as HttpsURLConnection
+            val inputStream = connection.inputStream
+            val response = inputStream.bufferedReader().use { it.readText() }
+
+            val json = JSONObject(response)
+            val routes = json.getJSONArray("routes")
+            if (routes.length() >0){
+                val overviewPolyline = routes.getJSONObject(0)
+                    .getJSONObject("overview_polyline")
+                    .getString("points")
+
+                val points = PolyUtil.decode(overviewPolyline)
+                runOnUiThread {
+                    mMap.addPolyline(
+                        PolylineOptions()
+                        .addAll(points)
+                        .width(10f)
+                        .color(Color.BLUE))
+                }
+            }
+        }.start()
+    }
 
     override fun onResume() {
         super.onResume()
         if (::mMap.isInitialized) {
-            locationHelper.checkLocationPermissionAndEnable { requestPermissionLauncher.launch(
-                Manifest.permission.ACCESS_FINE_LOCATION) }
+            checkLocationPermissionAndEnable()
         }
     }
 
     override fun onPause() {
         super.onPause()
-        locationHelper.stopLocationUpdates()
+        stopLocationUpdates()
     }
+
+
 
 }
