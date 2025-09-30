@@ -1,6 +1,6 @@
 # Google Maps Clone 🗺️
 
-An advanced Google Maps clone built with **Android (Kotlin)**.  
+An advanced Google Maps clone with real-time location tracking and routing built with **Android (Kotlin)**. 
 
 ## ✨ Features
 - 🔎 **Search Places** – Autocomplete and detailed place info using Geocoding / Places API.  
