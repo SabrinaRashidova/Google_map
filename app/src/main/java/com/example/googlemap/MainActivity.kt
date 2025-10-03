@@ -1,46 +1,28 @@
 package com.example.googlemap
 
 import android.Manifest
-import android.annotation.SuppressLint
-import android.content.Intent
-import android.graphics.Color
 import android.location.Geocoder
-import android.location.Location
 import android.os.Bundle
-import android.os.Looper
-import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AlertDialog
+import androidx.annotation.RequiresPermission
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.app.ActivityCompat.shouldShowRequestPermissionRationale
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.example.googlemap.databinding.ActivityMainBinding
 import com.google.android.gms.location.FusedLocationProviderClient
-import com.google.android.gms.location.LocationCallback
-import com.google.android.gms.location.LocationRequest
-import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
-import com.google.android.gms.location.Priority
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.OnMapReadyCallback
 import com.google.android.gms.maps.SupportMapFragment
 import com.google.android.gms.maps.model.LatLng
-import com.google.android.gms.maps.model.Marker
 import com.google.android.gms.maps.model.MarkerOptions
-import com.google.android.gms.maps.model.PolylineOptions
 import com.google.android.libraries.places.api.Places
-import com.google.maps.android.PolyUtil
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
 import java.io.IOException
-import java.net.URL
 import java.util.Locale
-import javax.net.ssl.HttpsURLConnection
 
 class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
@@ -72,6 +54,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
         fusedClient = LocationServices.getFusedLocationProviderClient(this)
 
+
         Places.initialize(applicationContext,getString(R.string.maps_api_key))
         autoCompleteHelper = AutoCompleteHelper(Places.createClient(this))
         autoCompleteHelper.setupAutoComplete(binding.etStart)
@@ -90,11 +73,13 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
 
 
+    @RequiresPermission(allOf = [Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION])
     override fun onMapReady(googleMap: GoogleMap) {
         mMap = googleMap
 
         locationHelper = LocationHelper(this,mMap,fusedClient)
         locationHelper.checkLocationPermissionAndEnable { requestPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION) }
+        locationHelper.realTrack()
 
         mapHelper = MapHelper(mMap,this)
     }
@@ -116,6 +101,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                         val destLatLng = LatLng(destList[0].latitude,destList[0].longitude)
 
                         withContext(Dispatchers.Main){
+                            locationHelper.followUser = false
+
                             mMap.addMarker(MarkerOptions().position(startLatLng).title("Start"))
                             mMap.addMarker(MarkerOptions().position(destLatLng).title("Destination"))
                             mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(startLatLng, 12f))
@@ -147,7 +134,5 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         super.onPause()
         locationHelper.stopLocationUpdates()
     }
-
-
 
 }

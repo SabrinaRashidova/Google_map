@@ -7,7 +7,9 @@ import android.app.AlertDialog
 import android.content.Intent
 import android.location.Location
 import android.location.LocationManager
+import android.os.Looper
 import android.provider.Settings
+import androidx.annotation.RequiresPermission
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.FusedLocationProviderClient
@@ -20,6 +22,8 @@ import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.Marker
 import com.google.android.gms.maps.model.MarkerOptions
+import com.google.android.gms.maps.model.Polyline
+import com.google.android.gms.maps.model.PolylineOptions
 
 class LocationHelper(
     private val activity: AppCompatActivity,
@@ -29,13 +33,41 @@ class LocationHelper(
 
     private var userMarker: Marker? = null
     private var cameraMovedOnce: Boolean = false
+    private var polyLine: Polyline? = null
+    private val pathPoints = mutableListOf<LatLng>()
+    var followUser: Boolean = true
 
-    private val locationCallback = object : LocationCallback(){
+    var locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY,2000)
+        .setMinUpdateDistanceMeters(5f).build()
+
+    private var locationCallback: LocationCallback = object : LocationCallback(){
         override fun onLocationResult(result: LocationResult) {
-            val loc = result.lastLocation ?: return
-            updatedMapLocation(loc)
+            for (location in result.locations){
+                val latLng = LatLng(location.latitude, location.longitude)
+
+                updatedMapLocation(location)
+                pathPoints.add(latLng)
+
+                if (polyLine == null) {
+                    polyLine = mMap.addPolyline(
+                        PolylineOptions().color(android.graphics.Color.BLUE).width(10f)
+                    )
+                }
+                polyLine?.points = pathPoints
+
+                if (followUser) {
+                    mMap.animateCamera(CameraUpdateFactory.newLatLng(latLng))
+                }
+            }
         }
     }
+
+    @RequiresPermission(allOf = [Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION])
+    fun realTrack(){
+        fusedClient.requestLocationUpdates(locationRequest,locationCallback, Looper.getMainLooper())
+    }
+
+
 
     fun checkLocationPermissionAndEnable(requestPermission: () -> Unit){
         val fine = Manifest.permission.ACCESS_FINE_LOCATION
@@ -60,6 +92,8 @@ class LocationHelper(
         try {
             mMap.isMyLocationEnabled = true
             mMap.uiSettings.isMyLocationButtonEnabled = true
+            mMap.uiSettings.isZoomControlsEnabled = true
+
 
             fusedClient.lastLocation.addOnSuccessListener { location ->
                 location?.let { updatedMapLocation(it) }
@@ -72,11 +106,14 @@ class LocationHelper(
 
     @SuppressLint("MissingPermission")
     private fun startLocationUpdates(){
+        stopLocationUpdates()
+
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY,5_000L)
             .setMinUpdateIntervalMillis(2_000L)
             .build()
 
         fusedClient.requestLocationUpdates(request,locationCallback,activity.mainLooper)
+
     }
 
     fun stopLocationUpdates() {
@@ -92,7 +129,7 @@ class LocationHelper(
             userMarker?.position = latLng
         }
         if (!cameraMovedOnce) {
-            mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(latLng, 4f))
+            mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(latLng,16f))
             cameraMovedOnce = true
         }
     }
