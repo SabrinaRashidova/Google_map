@@ -10,6 +10,7 @@ import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.MarkerOptions
+import com.google.android.gms.maps.model.Polyline
 import com.google.android.gms.maps.model.PolylineOptions
 import com.google.maps.android.PolyUtil
 import kotlinx.coroutines.Dispatchers
@@ -23,6 +24,7 @@ import javax.net.ssl.HttpsURLConnection
 
 class MapHelper(private val map: GoogleMap, private val context: Context) {
 
+    private var currentPolyline: Polyline? = null
      fun drawRoute(start: LatLng, dest: LatLng){
         val url = "https://maps.googleapis.com/maps/api/directions/json?" +
                 "origin=${start.latitude},${start.longitude}" +
@@ -43,10 +45,11 @@ class MapHelper(private val map: GoogleMap, private val context: Context) {
 
                 val points = PolyUtil.decode(overviewPolyline)
                 (context as Activity).runOnUiThread {
-                    map.addPolyline(
+                    currentPolyline?.remove()
+                    currentPolyline = map.addPolyline(
                         PolylineOptions()
                            .addAll(points)
-                            .width(12f)
+                            .width(16f)
                             .color(Color.BLUE))
                 }
             }

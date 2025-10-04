@@ -90,11 +90,6 @@ class LocationHelper(
     @SuppressLint("MissingPermission")
      fun enableMyLocation(){
         try {
-            mMap.isMyLocationEnabled = true
-            mMap.uiSettings.isMyLocationButtonEnabled = true
-            mMap.uiSettings.isZoomControlsEnabled = true
-
-
             fusedClient.lastLocation.addOnSuccessListener { location ->
                 location?.let { updatedMapLocation(it) }
                 startLocationUpdates()

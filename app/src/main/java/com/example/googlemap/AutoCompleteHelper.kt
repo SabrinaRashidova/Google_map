@@ -29,7 +29,7 @@ class AutoCompleteHelper(private val placesClient: PlacesClient) {
                 before: Int,
                 count: Int
             ) {
-                if (s.isNullOrEmpty()){
+                if (!s.isNullOrEmpty()){
                     val request = FindAutocompletePredictionsRequest.builder()
                         .setQuery(s.toString())
                         .build()

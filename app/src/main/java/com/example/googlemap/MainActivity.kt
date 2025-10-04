@@ -8,6 +8,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresPermission
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import com.example.googlemap.database.SavedPlace
+import com.example.googlemap.database.SavedPlaceDao
+import com.example.googlemap.database.SavedPlaceDatabase
 import com.example.googlemap.databinding.ActivityMainBinding
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
@@ -16,6 +19,7 @@ import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.OnMapReadyCallback
 import com.google.android.gms.maps.SupportMapFragment
 import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.Marker
 import com.google.android.gms.maps.model.MarkerOptions
 import com.google.android.libraries.places.api.Places
 import kotlinx.coroutines.Dispatchers
@@ -33,6 +37,12 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private lateinit var locationHelper: LocationHelper
     private lateinit var autoCompleteHelper: AutoCompleteHelper
     private lateinit var mapHelper: MapHelper
+    private lateinit var dao: SavedPlaceDao
+
+    private lateinit var db: SavedPlaceDatabase
+
+    private var startMarker: Marker? = null
+    private var destinationMarker: Marker? = null
 
     private val requestPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()){granted->
@@ -52,10 +62,15 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             .findFragmentById(R.id.map) as SupportMapFragment
         mapFragment.getMapAsync(this)
 
+        db = SavedPlaceDatabase.getInstance(this)
+        dao = db.savedPlaceDao()
+
         fusedClient = LocationServices.getFusedLocationProviderClient(this)
 
+        if (!Places.isInitialized()){
+            Places.initialize(applicationContext,getString(R.string.maps_api_key))
+        }
 
-        Places.initialize(applicationContext,getString(R.string.maps_api_key))
         autoCompleteHelper = AutoCompleteHelper(Places.createClient(this))
         autoCompleteHelper.setupAutoComplete(binding.etStart)
         autoCompleteHelper.setupAutoComplete(binding.etDestination)
@@ -76,12 +91,20 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     @RequiresPermission(allOf = [Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION])
     override fun onMapReady(googleMap: GoogleMap) {
         mMap = googleMap
+        mapHelper = MapHelper(mMap,this)
+        mMap.isMyLocationEnabled = true
+        mMap.uiSettings.isMyLocationButtonEnabled = true
+        mMap.uiSettings.isZoomControlsEnabled = true
+        mMap.uiSettings.isScrollGesturesEnabled = true
+        mMap.uiSettings.isRotateGesturesEnabled = true
+        mMap.uiSettings.isTiltGesturesEnabled = true
+
+        mMap.isTrafficEnabled = true
+        mMap.isBuildingsEnabled = true
 
         locationHelper = LocationHelper(this,mMap,fusedClient)
         locationHelper.checkLocationPermissionAndEnable { requestPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION) }
         locationHelper.realTrack()
-
-        mapHelper = MapHelper(mMap,this)
     }
 
     private fun geocodeAndShow(start: String, destination: String){
@@ -103,10 +126,13 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                         withContext(Dispatchers.Main){
                             locationHelper.followUser = false
 
-                            mMap.addMarker(MarkerOptions().position(startLatLng).title("Start"))
-                            mMap.addMarker(MarkerOptions().position(destLatLng).title("Destination"))
+                            startMarker?.remove()
+                            destinationMarker?.remove()
+                            startMarker = mMap.addMarker(MarkerOptions().position(startLatLng).title("Start"))
+                            destinationMarker = mMap.addMarker(MarkerOptions().position(destLatLng).title("Destination"))
                             mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(startLatLng, 12f))
                             mapHelper.drawRoute(startLatLng, destLatLng)
+
                         }
                     }else {
                         withContext(Dispatchers.Main) {
@@ -120,7 +146,16 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             }
     }
 
+    private fun savePlace(name: String,latLng: LatLng){
+        lifecycleScope.launch {
+            dao.insert(SavedPlace(name = name,lat = latLng.latitude,long = latLng.longitude))
+            loadSavedPlaces()
+        }
+    }
 
+    private fun loadSavedPlaces(){
+
+    }
 
     override fun onResume() {
         super.onResume()
