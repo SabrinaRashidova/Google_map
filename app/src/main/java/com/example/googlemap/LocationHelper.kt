@@ -99,6 +99,7 @@ class LocationHelper(
         }
     }
 
+
     @SuppressLint("MissingPermission")
     private fun startLocationUpdates(){
         stopLocationUpdates()

@@ -8,9 +8,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresPermission
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
-import com.example.googlemap.database.SavedPlace
-import com.example.googlemap.database.SavedPlaceDao
-import com.example.googlemap.database.SavedPlaceDatabase
 import com.example.googlemap.databinding.ActivityMainBinding
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
@@ -37,9 +34,6 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private lateinit var locationHelper: LocationHelper
     private lateinit var autoCompleteHelper: AutoCompleteHelper
     private lateinit var mapHelper: MapHelper
-    private lateinit var dao: SavedPlaceDao
-
-    private lateinit var db: SavedPlaceDatabase
 
     private var startMarker: Marker? = null
     private var destinationMarker: Marker? = null
@@ -61,9 +55,6 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         val mapFragment = supportFragmentManager
             .findFragmentById(R.id.map) as SupportMapFragment
         mapFragment.getMapAsync(this)
-
-        db = SavedPlaceDatabase.getInstance(this)
-        dao = db.savedPlaceDao()
 
         fusedClient = LocationServices.getFusedLocationProviderClient(this)
 
@@ -146,16 +137,6 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             }
     }
 
-    private fun savePlace(name: String,latLng: LatLng){
-        lifecycleScope.launch {
-            dao.insert(SavedPlace(name = name,lat = latLng.latitude,long = latLng.longitude))
-            loadSavedPlaces()
-        }
-    }
-
-    private fun loadSavedPlaces(){
-
-    }
 
     override fun onResume() {
         super.onResume()
