@@ -83,7 +83,7 @@ class LocationHelper(
                     .setNegativeButton("Cancel", null)
                     .show()
             }
-            else -> requestPermission
+            else -> requestPermission()
         }
     }
 

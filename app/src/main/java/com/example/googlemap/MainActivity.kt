@@ -1,11 +1,13 @@
 package com.example.googlemap
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.location.Geocoder
+import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.annotation.RequiresPermission
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.example.googlemap.databinding.ActivityMainBinding
@@ -47,6 +49,13 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             }
         }
 
+    private val locationPermissions = arrayOf(
+        Manifest.permission.ACCESS_FINE_LOCATION,
+        Manifest.permission.ACCESS_COARSE_LOCATION
+    )
+
+    private val backgroundLocationPermission = Manifest.permission.ACCESS_BACKGROUND_LOCATION
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
@@ -79,11 +88,16 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
 
 
-    @RequiresPermission(allOf = [Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION])
+//    @RequiresPermission(allOf = [Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION])
+//    @SuppressLint("MissingPermission")
     override fun onMapReady(googleMap: GoogleMap) {
+        if (googleMap == null){
+            Toast.makeText(this, "Failed to load google map", Toast.LENGTH_SHORT).show()
+            return
+        }
         mMap = googleMap
+
         mapHelper = MapHelper(mMap,this)
-        mMap.isMyLocationEnabled = true
         mMap.uiSettings.isMyLocationButtonEnabled = true
         mMap.uiSettings.isZoomControlsEnabled = true
         mMap.uiSettings.isScrollGesturesEnabled = true
@@ -95,7 +109,17 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
         locationHelper = LocationHelper(this,mMap,fusedClient)
         locationHelper.checkLocationPermissionAndEnable { requestPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION) }
-        locationHelper.realTrack()
+
+        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED){
+            mMap.isMyLocationEnabled = true
+            locationHelper.enableMyLocation()
+            showBackgroundPermissionExplanation()
+        }else{
+            locationHelper.checkLocationPermissionAndEnable {
+                requestPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+            }
+        }
+    locationHelper.realTrack()
     }
 
     private fun geocodeAndShow(start: String, destination: String){
@@ -137,6 +161,24 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             }
     }
 
+    private fun requestBackgroundPermissionIfNeeded(){
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q){
+            if (checkSelfPermission(backgroundLocationPermission) != android.content.pm.PackageManager.PERMISSION_GRANTED){
+                requestPermissionLauncher.launch(backgroundLocationPermission)
+            }
+        }
+    }
+
+    private fun showBackgroundPermissionExplanation(){
+        AlertDialog.Builder(this)
+            .setTitle("Allow background location access")
+            .setMessage("To keep tracking your location even when the app is closed, please allow background location access")
+            .setPositiveButton("Allow"){_,_ ->
+                requestBackgroundPermissionIfNeeded()
+            }
+            .setNegativeButton("No need",null)
+            .show()
+    }
 
     override fun onResume() {
         super.onResume()
@@ -150,5 +192,13 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         super.onPause()
         locationHelper.stopLocationUpdates()
     }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (::locationHelper.isInitialized){
+            locationHelper.stopLocationUpdates()
+        }
+    }
+
 
 }
